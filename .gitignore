@@ -1,0 +1,16 @@
+# Python / Streamlit
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.vscode/
+.venv/
+.streamlit/config.toml
+
+# Chroma veritabanı
+vectordb/
+
+# Ortam
+.env

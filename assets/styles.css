@@ -1,0 +1,25 @@
+/* === Global tweaks === */
+.stSlider > div { padding-top: 6px; }
+.stChatMessage { font-size: 15px; }
+
+/* Form buttons: tek satır, taşma yok */
+.stForm .stButton > button { white-space: nowrap; height: 40px; }
+
+/* === Hero header === */
+.hero-wrap {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 0.2rem;
+}
+.hero-icon { font-size: 1.9rem; line-height: 1; }
+.hero-title {
+  font-size: 2.2rem; font-weight: 800;
+  background: linear-gradient(90deg,#00b4d8,#90e0ef);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero-sub {
+  font-size: 0.95rem; color: #9ca3af; margin-bottom: 1.5rem;
+}
+
+/* Kaynak expander başlıkları */
+.block-container .streamlit-expanderHeader {
+  font-size: 0.95rem;
+}
