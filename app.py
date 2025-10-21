@@ -25,9 +25,10 @@ def ensure_chroma_index():
     import chromadb
     client = chromadb.PersistentClient(path=VECTOR_DIR)
     try:
-        client.get_collection(COLLECTION_NAME)
+        col = client.get_collection(COLLECTION_NAME)
     except Exception:
-        # koleksiyon yoksa data/ klasöründen indeksle
+        col = client.create_collection(name=COLLECTION_NAME)
+    if col.count() == 0:
         ingest_main("data/")
 
 def rewrite_to_english(q: str) -> str:
