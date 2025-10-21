@@ -1,10 +1,11 @@
 import os
 import uuid
 import time
+from ingest import main as ingest_main
 import streamlit as st
 from dotenv import load_dotenv
-import chromadb  # sadece indeks özetini göstermek için
-from rag_pipeline import answer  # yalnızca Gemini kullanan RAG hattı
+import chromadb
+from rag_pipeline import answer
 
 load_dotenv()
 
@@ -19,6 +20,15 @@ def load_css(path: str):
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
         pass
+
+def ensure_chroma_index():
+    import chromadb
+    client = chromadb.PersistentClient(path=VECTOR_DIR)
+    try:
+        client.get_collection(COLLECTION_NAME)
+    except Exception:
+        # koleksiyon yoksa data/ klasöründen indeksle
+        ingest_main("data/")
 
 def rewrite_to_english(q: str) -> str:
     """Gemini'ye ipucu için kısa İngilizce yeniden yazım. Hata olursa orijinali döndürür."""
@@ -45,6 +55,7 @@ def rewrite_to_english(q: str) -> str:
 # --------- UI Başlangıç ---------
 st.set_page_config(page_title="Kali Linux Multilingual-Turkish RAG Chatbot", page_icon="🔎", layout="centered")
 load_css("assets/styles.css")
+ensure_chroma_index()
 
 # Header
 st.markdown(
