@@ -1,86 +1,28 @@
 import os
-import io
-import glob
 import uuid
 import time
 import streamlit as st
 from dotenv import load_dotenv
-
-# RAG hattı (mevcut dosyan)
-from rag_pipeline import answer
-
-# PDF & indeksleme için
-import chromadb
-from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
-from ingest import chunk_text
+import chromadb  # sadece indeks özetini göstermek için
+from rag_pipeline import answer  # yalnızca Gemini kullanan RAG hattı
 
 load_dotenv()
 
 # --------- Sabitler ---------
-DATA_DIR = "data"
 VECTOR_DIR = "vectordb"
 COLLECTION_NAME = "docs"
-EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
-
-os.makedirs(DATA_DIR, exist_ok=True)
 
 # --------- Yardımcılar ---------
 def load_css(path: str):
-    """Tek dosyadan CSS yükle."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
-        st.warning(f"CSS bulunamadı: {path}")
-
-def list_pdfs():
-    files = sorted(glob.glob(os.path.join(DATA_DIR, "*.pdf")))
-    return [os.path.basename(p) for p in files]
-
-def save_bytes_to_data(original_name: str, bytes_data: bytes) -> str:
-    """Yüklenen PDF'i data/ altına KULLANICI TETİĞİYLE kaydeder. Aynı isim varsa (1),(2)... ekler."""
-    base = os.path.basename(original_name)
-    name, ext = os.path.splitext(base)
-    target = os.path.join(DATA_DIR, base)
-    c = 1
-    while os.path.exists(target):
-        target = os.path.join(DATA_DIR, f"{name} ({c}){ext}")
-        c += 1
-    with open(target, "wb") as f:
-        f.write(bytes_data)
-    return target
-
-def index_pdf_file(pdf_path: str, delete_existing: bool = True):
-    """Tek PDF'i okuyup vektör indekse ekler. Aynı kaynaktan varsa önce siler (dup. önler)."""
-    # 1) PDF metni
-    reader = PdfReader(pdf_path)
-    text = "\n".join([(p.extract_text() or "") for p in reader.pages])
-    chunks = chunk_text(text)
-    if not chunks:
-        raise RuntimeError("Metin çıkarılamadı (taranmış PDF olabilir).")
-
-    # 2) Chroma koleksiyon
-    client = chromadb.PersistentClient(path=VECTOR_DIR)
-    col = client.get_collection(COLLECTION_NAME)
-
-    # Aynı source varsa sil
-    if delete_existing:
-        try:
-            col.delete(where={"source": os.path.basename(pdf_path)})
-        except Exception:
-            pass
-
-    # 3) Embedding + ekleme
-    emb = SentenceTransformer(EMBED_MODEL_NAME)
-    vecs = emb.encode(chunks, normalize_embeddings=True).tolist()
-    ids = [str(uuid.uuid4()) for _ in chunks]
-    metas = [{"source": os.path.basename(pdf_path), "page_hint": i + 1} for i in range(len(chunks))]
-    col.add(ids=ids, documents=chunks, metadatas=metas, embeddings=vecs)
+        pass
 
 def rewrite_to_english(q: str) -> str:
-    """Gemini ile kısa İngilizce yeniden yazım. Hata olursa orijinali döndürür."""
-    import requests, re
+    """Gemini'ye ipucu için kısa İngilizce yeniden yazım. Hata olursa orijinali döndürür."""
+    import re, requests
     need = bool(re.search(r"[çğıöşüÇĞİÖŞÜ]", q)) or bool(re.search(r"\d{3,}", q))
     if not need:
         return q
@@ -101,132 +43,111 @@ def rewrite_to_english(q: str) -> str:
         return q
 
 # --------- UI Başlangıç ---------
-st.set_page_config(page_title="TR-FAQ RAG Chatbot", page_icon="🔎", layout="centered")
+st.set_page_config(page_title="Kali Linux Multilingual-Turkish RAG Chatbot", page_icon="🔎", layout="centered")
 load_css("assets/styles.css")
 
-# Hero header
+# Header
 st.markdown(
     """
-    <div class="hero-wrap">
+    <div class="hero-wrap" style="text-align:center;margin-top:14px;">
       <span class="hero-icon">🤖</span>
-      <span class="hero-title">TR-FAQ RAG Chatbot</span>
+      <span class="hero-title">Kali Linux Multilingual-Turkish RAG Chatbot</span>
     </div>
-    <div class="hero-sub">
-      PDF belgelerinden akıllı yanıt veren çok dilli RAG uygulaması<br>
-      <b>Model:</b> Gemini • <b>Vektör DB:</b> Chroma • <b>Türkçe öncelikli</b>
+    <div class="hero-sub" style="text-align:center;opacity:.9;">
+      Model: <b>Gemini</b> • Vektör DB: <b>Chroma</b>
     </div>
+    <hr style="opacity:.1;margin:18px 0 6px 0;">
     """,
     unsafe_allow_html=True
 )
-
-# --------- Sidebar ---------
-with st.sidebar:
-    st.subheader("Ayarlar")
-
-    providers = ["gemini", "openai"]
-    default_provider = "gemini"
-    if os.getenv("OPENAI_API_KEY") and not os.getenv("GEMINI_API_KEY"):
-        default_provider = "openai"
-    if "provider" not in st.session_state:
-        st.session_state.provider = default_provider
-
-    st.session_state.provider = st.radio(
-        "LLM sağlayıcı",
-        providers,
-        index=providers.index(st.session_state.provider),
-        horizontal=False,
-    )
-    top_k = st.slider("Top K", 1, 8, 4)
-
-    # Çok dilli (çeviri) seçeneği
-    if "multilingual" not in st.session_state:
-        st.session_state.multilingual = False
-    st.session_state.multilingual = st.toggle(
-        "Çok dilli (çeviri ile)",
-        value=st.session_state.multilingual,
-        help="Açıksa, TR dışındaki dilleri İngilizceye yeniden yazarak aramada kullanır; yanıt Türkçe olur."
-    )
-
-    st.markdown("---")
-    st.markdown("### data/ içindeki PDF'ler")
-    pdfs = list_pdfs()
-    if pdfs:
-        for fn in pdfs:
-            st.write("• ", fn)
-    else:
-        st.caption("data/ klasöründe PDF yok.")
-
-    # uploader'ı resetlemek için döngüsel key kullan
-    if "uploader_key" not in st.session_state:
-        st.session_state.uploader_key = 0
-
-    uploaded = st.file_uploader(
-        "PDF seç", type=["pdf"],
-        key=f"uploader_{st.session_state.uploader_key}"
-    )
-
-    if uploaded:
-        size_mb = len(uploaded.getvalue()) / (1024 * 1024)
-        st.caption(f"Seçildi: {uploaded.name} • {size_mb:.2f} MB")
-
-        if st.button("Kaydet & indeksle", use_container_width=True, key=f"btn_ingest_{st.session_state.uploader_key}"):
-            try:
-                bytes_data = uploaded.getvalue()
-                target = save_bytes_to_data(uploaded.name, bytes_data)
-                with st.spinner(f"İndeksleniyor: {os.path.basename(target)}"):
-                    t0 = time.time()
-                    index_pdf_file(target, delete_existing=True)  # aynı kaynak varsa sil
-                    dt = time.time() - t0
-                st.success(f"{os.path.basename(target)} eklendi ve indekslendi ({dt:.2f} sn).")
-                # uploader'ı sıfırla
-                st.session_state.uploader_key += 1
-                st.rerun()
-            except Exception as e:
-                st.error(f"Yükleme/indeksleme hatası: {e}")
 
 # --------- Session State ---------
 if "history" not in st.session_state:
     st.session_state.history = []
 if "last_sources" not in st.session_state:
     st.session_state.last_sources = []
-if "cancel" not in st.session_state:
-    st.session_state.cancel = False
 if "running" not in st.session_state:
     st.session_state.running = False
+if "run_token" not in st.session_state:
+    st.session_state.run_token = None
+if "cancel_requested" not in st.session_state:
+    st.session_state.cancel_requested = False
 
-# --------- Sorgu Formu ---------
+# --------- Sidebar ---------
+with st.sidebar:
+    st.subheader("Ayarlar")
+    top_k = st.slider("Top K", 1, 8, 4)
+
+    if "multilingual" not in st.session_state:
+        st.session_state.multilingual = False
+    st.session_state.multilingual = st.toggle(
+        "Çok dilli (çeviri ile)",
+        value=st.session_state.multilingual,
+        help="Açıksa, TR dışındaki dilleri İngilizceye yeniden yazar; yanıt Türkçe olur."
+    )
+
+    st.markdown("---")
+    st.markdown("**İndeks Özeti (Chroma)**")
+    try:
+        client = chromadb.PersistentClient(path=VECTOR_DIR)
+        col = client.get_collection(COLLECTION_NAME)
+        total = col.count()
+        st.caption(f"Koleksiyon: {COLLECTION_NAME} • Parça sayısı: {total}")
+
+        # Tüm kaynakları sayfa sayfa oku
+        sources = {}
+        offset, step = 0, 500
+        while offset < total:
+            got = col.get(include=["metadatas"], limit=step, offset=offset)
+            metas = got.get("metadatas", []) or []
+            for m in metas:
+                if not m:
+                    continue
+                src = m.get("source", "?")
+                sources[src] = sources.get(src, 0) + 1
+            offset += step
+
+        if sources:
+            st.markdown("**Kaynaklar (indeksten):**")
+            for s, cnt in sorted(sources.items(), key=lambda x: x[0].lower()):
+                st.write(f"• {s}  _(parça: {cnt})_")
+        else:
+            st.caption("İndekste kaynak meta bulunamadı.")
+    except Exception as e:
+        st.caption(f"Chroma erişim hatası: {e}")
+
+# --------- Form ---------
 with st.form("qa_form", clear_on_submit=True):
-    q = st.text_input("Sorunu yaz:", placeholder="Örn: Category ID 171146 nedir?")
+    q = st.text_input("Sorunu yaz:", placeholder="Örn: Kali Linux nedir?")
     c1, c2 = st.columns([1, 1], gap="small")
     with c1:
         send = st.form_submit_button("Gönder", use_container_width=True, type="primary")
     with c2:
-        toggle_cancel = st.form_submit_button("İptal (aç/kapat)", use_container_width=True)
-    st.caption("Not: Formu göndermeden sayfadaki diğer butonlar yeni sorgu başlatmaz.")
+        cancel_now = st.form_submit_button("İptal Et", use_container_width=True)
+    st.caption("Not: Gönder'e bastıktan sonra 'İptal Et' ile o anki sorguyu iptal edebilirsin.")
 
-# İptal toggle (aç/kapat)
-if toggle_cancel:
-    st.session_state.cancel = not st.session_state.cancel
-    st.markdown(
-        f"<div style='text-align:right; font-weight:500; color:#ccc;'>"
-        f"İptal modu: {'🟥 AÇIK — yeni sorgular başlatılmaz.' if st.session_state.cancel else '🟩 KAPALI — sorgular çalışır.'}"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+# Tek seferlik iptal
+if 'cancel_now' in locals() and cancel_now:
+    if st.session_state.get("running", False):
+        st.session_state.cancel_requested = True
+        st.session_state.run_token = None
+        st.session_state.running = False
+    st.info("Sorgu iptal edildi.")
+    st.rerun()
 
 # --------- Sorgu Çalıştırma ---------
 if send:
-    if st.session_state.cancel:
-        st.info("İptal açık. Sorgu başlatılmadı.")
-    elif not q.strip():
+    if not q.strip():
         st.warning("Soru boş olamaz.")
-    elif st.session_state.running:
-        st.info("Zaten bir sorgu çalışıyor.")
     else:
+        my_token = uuid.uuid4().hex
+        st.session_state.run_token = my_token
+        if st.session_state.running:
+            st.session_state.running = False
+
         try:
             st.session_state.running = True
 
-            # Çok dilli mod: EN reformülasyonu retrieval ipucu olarak eklensin
             combined_q = q
             if st.session_state.multilingual:
                 q_en = rewrite_to_english(q)
@@ -235,10 +156,15 @@ if send:
 
             t0 = time.time()
             with st.spinner("Yanıt hazırlanıyor…"):
-                out = answer(combined_q, top_k=top_k, provider=st.session_state.provider)
+                out = answer(combined_q, top_k=top_k)  # yalnızca Gemini
             dt = time.time() - t0
-            st.caption(f"⏱️ Sorgu süresi: **{dt:.2f} saniye**")
 
+            # İptal kontrolü — geç yanıtı yazma
+            if st.session_state.run_token != my_token or st.session_state.cancel_requested:
+                st.session_state.cancel_requested = False
+                st.stop()
+
+            st.caption(f"⏱️ Sorgu süresi: **{dt:.2f} saniye**")
             st.session_state.history.append(("user", q))
             st.session_state.history.append(("assistant", out["answer"]))
             st.session_state.last_sources = out.get("sources", [])
@@ -248,9 +174,8 @@ if send:
             st.session_state.running = False
 
 # --------- Sohbet Geçmişi ---------
-ICON_USER = "🧠"       # kullanıcı avatarı
-ICON_ASSISTANT = "⚙️"  # asistan avatarı
-
+ICON_USER = "🧠"
+ICON_ASSISTANT = "⚙️"
 for role, msg in st.session_state.history:
     if role == "user":
         with st.chat_message("user", avatar=ICON_USER):

@@ -15,7 +15,7 @@ COLLECTION_NAME = "docs"
 EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
 
 # -----------------------------
-# Embedding model (lazy global)
+# Embedding (lazy global)
 # -----------------------------
 _embedder = SentenceTransformer(EMBED_MODEL_NAME)
 
@@ -27,42 +27,39 @@ def _client_collection():
     try:
         return client.get_collection(COLLECTION_NAME)
     except Exception:
-        # Kullanıcı dostu mesaj:
         raise RuntimeError(
             "Vektör indeksi bulunamadı. Lütfen önce ingest çalıştırın:\n"
             "  python ingest.py --input data/\n"
             "Ayrıca data klasöründe en az 1 PDF olduğundan emin olun."
         )
 
-# Koleksiyonu parti parti gezen basit bir iterator (büyük veri setlerinde daha hızlı/az RAM)
-def _paged_iter(col, batch: int = 200):
+# -----------------------------
+# Basit sayfa sayfa okuma (RAM dostu)
+# -----------------------------
+@lru_cache(maxsize=1)
+def _all_docs_in_ram():
+    col = _client_collection()
     total = col.count()
-    off = 0
+    off, docs, metas = 0, [], []
     while off < total:
-        got = col.get(include=["documents", "metadatas"], limit=batch, offset=off)
-        docs = got.get("documents", []) or []
-        metas = got.get("metadatas", []) or []
-        for d, m in zip(docs, metas):
-            if d:
-                return_data = (d, m)
-                yield return_data
-        off += batch
+        got = col.get(include=["documents", "metadatas"], limit=500, offset=off)
+        docs.extend(got.get("documents", []) or [])
+        metas.extend(got.get("metadatas", []) or [])
+        off += 500
+    return docs, metas
 
 # -----------------------------
-# Keyword / number scan (paged)
+# Keyword / number scan
 # -----------------------------
 def _keyword_hits(col, query: str, max_hits: int = 200):
-    """
-    Hızlı anahtar kelime/sayı taraması (sayfalı). Büyük koleksiyonlarda tamamını bir kerede okumaz.
-    3+ haneli sayıları ve anahtar kelimeleri arar.
-    """
     nums = re.findall(r"\d{3,}", query)
     words = [w.lower() for w in re.findall(r"[A-Za-zÇĞİÖŞÜçğıöşü]+", query)]
     if not nums and not words:
         return []
 
     hits, seen = [], set()
-    for doc, meta in zip(*_all_docs_in_ram()):
+    docs, metas = _all_docs_in_ram()
+    for doc, meta in zip(docs, metas):
         dl = doc.lower()
         has_all_nums = all(n in doc for n in nums) if nums else True
         has_some_words = any(w in dl for w in words) if words else True
@@ -83,26 +80,21 @@ def _keyword_hits(col, query: str, max_hits: int = 200):
     return hits[:max_hits]
 
 # -----------------------------
-# Hybrid retrieve: paged keyword + vector
+# Hybrid retrieve
 # -----------------------------
 def retrieve(query: str, top_k: int = 4) -> List[Dict]:
     col = _client_collection()
 
-    # 0) Hızlı yol: sadece sayısal ID ağırlıklı kısa sorgular
     only_numbers = re.fullmatch(r"\D*\d{3,}\D*", query.strip()) is not None
-
-    # 1) Anahtar kelime/sayı taraması (çok hızlı sonuç verebilir)
     kw_docs = _keyword_hits(col, query, max_hits=200)
 
-    # Sadece sayısal senaryoda iyi eşleşme varsa embeddings'e girmeden dönebiliriz
     if only_numbers and kw_docs:
         merged = kw_docs[:max(top_k, 6)]
         max_kw = max(d["score_kw"] for d in merged) or 1.0
         for d in merged:
-            d["score"] = 0.4 * (d["score_kw"] / max_kw)  # normalize
+            d["score"] = 0.4 * (d["score_kw"] / max_kw)
         return merged[:top_k]
 
-    # 2) Vektör tabanlı (biraz geniş al)
     q_emb = _embedder.encode([query], normalize_embeddings=True).tolist()
     vres = col.query(
         query_embeddings=q_emb,
@@ -111,10 +103,9 @@ def retrieve(query: str, top_k: int = 4) -> List[Dict]:
     )
     vector_docs = []
     for doc, meta, dist in zip(vres["documents"][0], vres["metadatas"][0], vres["distances"][0]):
-        sim = 1.0 / (1.0 + float(dist))  # distance -> similarity
+        sim = 1.0 / (1.0 + float(dist))
         vector_docs.append({"text": doc, "meta": meta, "score_vec": sim})
 
-    # 3) Birleştir + yeniden sırala (ağırlıklar: vektör %60 + keyword %40)
     bag = {}
     for d in vector_docs:
         h = hashlib.md5(d["text"].encode("utf-8")).hexdigest()
@@ -134,22 +125,8 @@ def retrieve(query: str, top_k: int = 4) -> List[Dict]:
     return merged[:top_k]
 
 # -----------------------------
-# LLM calls
+# Gemini caller (REST)
 # -----------------------------
-def _generate_openai(system_prompt: str, user_prompt: str) -> str:
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.2,
-    )
-    return resp.choices[0].message.content
-
 def _generate_gemini(system_prompt: str, user_prompt: str) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -158,14 +135,14 @@ def _generate_gemini(system_prompt: str, user_prompt: str) -> str:
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
     payload = {"contents": [{"parts": [{"text": system_prompt + "\n\n" + user_prompt}]}]}
 
-    # v1 ve v1beta, prefixli ve prefixsiz kombinasyonları dene
+    # v1 ve v1beta varyasyonlarını dene
     combos = [("v1", False), ("v1", True), ("v1beta", False), ("v1beta", True)]
     last_info = None
     for api_ver, add_prefix in combos:
         name = f"models/{model}" if add_prefix else model
         url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{name}:generateContent?key={api_key}"
         try:
-            r = requests.post(url, json=payload, timeout=60)
+            r = requests.post(url, json=payload, timeout=30)
             if r.status_code == 404:
                 last_info = f"{api_ver}:{name} -> 404"
                 continue
@@ -176,27 +153,25 @@ def _generate_gemini(system_prompt: str, user_prompt: str) -> str:
             last_info = f"{api_ver}:{name} -> {e}"
             continue
 
-    # Model listesiyle kullanıcıya rehberlik et
     try:
         names = []
         for api_ver in ("v1", "v1beta"):
             list_url = f"https://generativelanguage.googleapis.com/{api_ver}/models?key={api_key}"
-            resp = requests.get(list_url, timeout=30)
+            resp = requests.get(list_url, timeout=15)
             if resp.ok:
                 models = resp.json().get("models", [])
                 names += [m.get("name", "") for m in models]
-        raise RuntimeError(f"Gemini çağrısı başarısız. Denemeler: {last_info}. Sunucunun bildirdiği modellerden bazıları: {names[:10]}")
+        raise RuntimeError(f"Gemini çağrısı başarısız. Denemeler: {last_info}. Sunucunun bildirdiği örnek modeller: {names[:10]}")
     except Exception as e:
         raise RuntimeError(f"Gemini çağrısı başarısız. Son deneme: {last_info}. Hata: {e}")
 
 # -----------------------------
-# Public API
+# Public API (yalnızca Gemini)
 # -----------------------------
-def answer(query: str, top_k: int = 4, provider: str = "gemini", retrieval_query: str | None = None) -> Dict:
-    # retrieval için hangi metni kullanacağımıza karar ver
+def answer(query: str, top_k: int = 4, retrieval_query: str | None = None) -> Dict:
     rq = retrieval_query or query
-
     ctx_docs = retrieve(rq, top_k=top_k)
+
     context = "\n\n".join(
         [f"[Kaynak {i+1}] {d['meta'].get('source','?')} (parça {d['meta'].get('page_hint','?')})\n{d['text']}"
          for i, d in enumerate(ctx_docs)]
@@ -206,24 +181,7 @@ def answer(query: str, top_k: int = 4, provider: str = "gemini", retrieval_query
         "bağlam yetersizse 'Bu konuda elimde yeterli bilgi yok.' de. "
         "Cevabın sonunda kullandığın kaynak numaralarını köşeli parantezle göster."
     )
-    # LLM’e giden soru: her zaman kullanıcının orijinali
     user_prompt = f"Soru: {query}\n\nBağlam:\n{context}"
 
-    if provider.lower() == "gemini" and os.getenv("GEMINI_API_KEY"):
-        text = _generate_gemini(system_prompt, user_prompt)
-    else:
-        text = _generate_openai(system_prompt, user_prompt)
-
+    text = _generate_gemini(system_prompt, user_prompt)
     return {"answer": text, "sources": ctx_docs}
-
-@lru_cache(maxsize=1)
-def _all_docs_in_ram():
-    col = _client_collection()
-    total = col.count()
-    off, docs, metas = 0, [], []
-    while off < total:
-        got = col.get(include=["documents", "metadatas"], limit=500, offset=off)
-        docs.extend(got.get("documents", []) or [])
-        metas.extend(got.get("metadatas", []) or [])
-        off += 500
-    return docs, metas

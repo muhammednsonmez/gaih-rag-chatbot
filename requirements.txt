@@ -4,8 +4,8 @@ langchain-community
 langchain-text-splitters
 sentence-transformers
 chromadb
-pydantic<2.0
+pydantic>=2.0
 python-dotenv
-openai
 google-generativeai
 pypdf
+requests

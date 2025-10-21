@@ -1,154 +1,120 @@
-# 🤖 TR-FAQ RAG Chatbot  
+# TR-FAQ RAG Chatbot
 
-Akbank Generative AI Bootcamp için hazırlanmış Türkçe **RAG (Retrieval-Augmented Generation)** tabanlı chatbot projesi.  
-PDF belgelerinden bilgi çekip kaynaklı yanıtlar üreten, çok dilli destekli bir AI asistanıdır.  
-
----
-
-## 📋 Proje Hakkında  
-
-Bu proje, `data/` klasöründeki PDF’leri okuyarak vektör veritabanına işler ve  
-**Gemini** veya **OpenAI GPT** modellerinden biriyle kullanıcı sorularına akıllı, kaynaklı yanıtlar döndürür.  
-
-İsteğe bağlı “Çok Dilli Mod” aktif edildiğinde sistem yabancı dillerde gelen soruları otomatik olarak İngilizce’ye çevirir,  
-yanıtı Türkçe üretir ve kullanıcıya sunar.  
+Gemini destekli **Retrieval-Augmented Generation** (RAG) chatbotu. `data/` klasörüne eklediğiniz PDF dosyalarını indeksleyerek Streamlit arayüzü üzerinden kaynak gösteren yanıtlar üretir. Uygulama varsayılan olarak Türkçe konuşur ve isteğe bağlı olarak çok dilli sorguları İngilizce’ye yeniden yazarak daha isabetli sonuçlar döndürür.
 
 ---
 
-## 🛠️ Kullanılan Teknolojiler  
-
-- **Streamlit** – Web arayüzü  
-- **LangChain + Sentence-Transformers** – Metin embedding işlemleri  
-- **ChromaDB** – Vektör veritabanı  
-- **Google Gemini / OpenAI GPT** – LLM yanıt üretimi  
-- **python-dotenv** – Ortam değişkenleri yönetimi  
-- **pypdf** – PDF metin çıkarma  
+## Özellikler
+- **Gemini-only**: Tüm yanıtlar Google Gemini API üzerinden üretilir (OpenAI bağımlılığı yoktur).
+- **Kalıcı vektör veritabanı**: ChromaDB ile hibrit (vektör + anahtar kelime) arama.
+- **Çok dilli sorgu modu**: Türkçe dışındaki soruları otomatik çevirerek bağlam toplamayı iyileştirir.
+- **Streamlit arayüzü**: Top-K seçimi, PDF listesi, sohbet geçmişi ve kaynak gösterimi.
+- **PDF yükleme & indeksleme**: PDF’leri uygulama içinden veya komut satırından ekleyebilirsiniz.
+- **İptal & sohbet dışa aktarma**: Uzayan sorguları iptal edin, konuşmayı `.txt` olarak indirin.
 
 ---
 
-## 🚀 Kurulum  
+## Başlangıç
+### Gereksinimler
+- Python 3.10+
+- Google Gemini API anahtarı (Google AI Studio)
+- `pip`, `virtualenv` (opsiyonel ama tavsiye edilir)
 
-### 1️⃣ Gerekli Paketleri Yükleyin  
+### Kurulum Adımları
+1. **Depoyu içeri alın**
+   ```bash
+   git clone <repo-url>
+   cd gaih-rag-chatbot
+   ```
+2. **Sanal ortam (önerilir)**
+   ```bash
+   python -m venv .venv
+   # Windows
+   .venv\Scripts\activate
+   # macOS / Linux
+   source .venv/bin/activate
+   ```
+3. **Bağımlılıkları yükleyin**
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+4. **.env dosyasını oluşturun**
+   `.env` dosyası örneği:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key
+   GEMINI_MODEL=gemini-2.5-flash   # opsiyonel, varsayılan bu model
+   ```
+
+> ⚠️ Uygulama yalnızca Gemini ile çalışır. `GEMINI_API_KEY` olmadan başlatamazsınız.
+
+---
+
+## PDF’leri İndeksleme
+Uygulama ilk açıldığında `vectordb/` içinde koleksiyon bulamazsa hata verir. PDF’leri indekslemek için:
 ```bash
-1️⃣ Sanal ortam oluşturun
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS/Linux
-source .venv/bin/activate
-
-2️⃣ Gereken paketleri kurun
-pip install -r requirements.txt
-
-3️⃣ API Anahtarlarını Ayarlayın
-
-Proje kök dizininde .env dosyası oluşturun:
-
-GEMINI_API_KEY=your_gemini_api_key
-OPENAI_API_KEY=your_openai_api_key
-
-🔑 Gemini API key: Google AI Studio
-🔑 OpenAI API key: platform.openai.com
-
-4️⃣ Uygulamayı Çalıştırın
-streamlit run app.py
-
-📁 Proje Yapısı
-GAIH-RAG-CHATBOT/
-│
-├── app.py
-├── ingest.py
-├── rag_pipeline.py
-│
-├── assets/
-│   └── styles.css
-│
-├── data/
-│   ├── eBay-Block-category-list.pdf
-│   └── ...
-│
-├── vectordb/
-├── .streamlit/
-│   └── config.toml
-│
-├── .env.example
-├── requirements.txt
-├── to-do.md
-├── LICENSE
-└── README.md
+python ingest.py --input data/
 ```
-### 💡 Nasıl Çalışır?
 
-PDF Yükleme: data/ klasörüne PDF eklenir veya arayüzden yüklenir.
+- `data/` klasörüne koyduğunuz her PDF, metin parçalarına bölünerek ChromaDB’ye eklenir.
+- Aynı dosyayı tekrar indekslemek isterseniz, çıkarıp yeniden ekleyebilir veya komutu yeniden çalıştırabilirsiniz (koleksiyon silinip baştan oluşturulur).
+- PDF taranmış ise metin çıkarımı boş dönebilir; bu durumda OCR uygulamanız gerekir.
 
-İndeksleme: PDF’ler parçalara bölünür, embedding ile vektör haline getirilir.
+---
 
-Sorgulama: Kullanıcı sorusu embedding’e dönüştürülür, en ilgili parçalar bulunur.
+## Streamlit Uygulamasını Çalıştırma
+```bash
+streamlit run app.py
+```
 
-Yanıt Üretimi: Seçilen model (Gemini / GPT) kaynak metinlere göre yanıt üretir.
+Arayüz bileşenleri:
+- Sol menüde `Top K` (döndürülmek istenen bağlam parçası sayısı) ve çok dilli mod anahtarı.
+- PDF listesi mevcut belgeleri gösterir.
+- Form alanından soru gönderilir, iptal butonu uzun sorguları keser.
+- Yanıtlar sonunda kullanılan kaynaklar `[1]`, `[2]` şeklinde listelenir.
 
-Çıktı: Yanıt + kaynak PDF dosya adları ve sayfa numaraları gösterilir.
+---
 
-🎯 Örnek Sorular
+## Streamlit Cloud’a Dağıtım
+1. Depoyu GitHub’a (veya Streamlit Cloud’un erişebileceği bir kaynağa) gönderin.
+2. Streamlit Cloud’da yeni bir uygulama oluştururken `app.py` dosyasını seçin.
+3. **Secrets** bölümüne Gemini anahtarınızı ekleyin:
+   ```toml
+   GEMINI_API_KEY = "xxxxx"
+   GEMINI_MODEL = "gemini-2.5-flash"
+   ```
+4. Uygulama açıldıktan sonra Cloud’ın Terminal sekmesinden bir defaya mahsus:
+   ```bash
+   python ingest.py --input data/
+   ```
+   komutunu çalıştırın. (Cloud ortamı kapatılıp yeniden açılırsa komutu tekrar çalıştırmanız gerekebilir.)
+5. Veri gizliliği gerektiren PDF’ler için Streamlit Cloud’da `Secrets` veya `st.file_uploader` ile yükleme akışını tercih edin; bu repository’ye dosya koymaktan daha güvenlidir.
 
-“Category ID 171146 olan nedir?”
+---
 
-“Learning-Kali-Linux PDF’inde packet sniffing hangi sayfada?”
+## Klasör Yapısı
+```text
+gaih-rag-chatbot/
+├─ app.py              # Streamlit arayüzü ve entegrasyonlar
+├─ rag_pipeline.py     # Hibrit retrieval + Gemini yanıt üretimi
+├─ ingest.py           # PDF parçalama ve ChromaDB’ye ekleme
+├─ assets/styles.css   # Streamlit teması
+├─ data/               # PDF kaynakları (örnek dosyalarınızı buraya koyun)
+├─ vectordb/           # Kalıcı Chroma koleksiyonu (ilk ingest sonrası oluşur)
+├─ requirements.txt
+└─ README.md
+```
 
-“Organizational Behavior PDF’inde liderlik tanımı ne?”
+---
 
-⚙️ Çok Dilli Mod
+## Sık Karşılaşılan Sorunlar
+- **`GEMINI_API_KEY` bulunamadı**: `.env` dosyasını oluşturup `streamlit run app.py` komutundan önce sanal ortamı aktifleştirdiğinizden emin olun.
+- **`chromadb.errors.NotFoundError`**: Henüz indeks yok; `python ingest.py --input data/` komutunu çalıştırın.
+- **Yanıtlar İngilizce geliyor**: Çok dilli modu kapatmayı deneyin. Sistem komutları Türkçe olsa da Gemini modelinin varsayılan davranışı modele göre değişebilir.
+- **PDF metni boş görünüyor**: Dosya taranmış olabilir. OCR’den geçirdikten sonra tekrar ekleyin.
+- **Streamlit Cloud’da dosyalar kayboluyor**: Her yeniden başlatmada `vectordb/` sıfırlanır; terminalden ingest komutunu tekrar çalıştırın veya başlatma betiğine ekleyin.
 
-🗣️ “Sorguyu İngilizceye yeniden yaz” seçeneği açıkken:
-Kullanıcının yazdığı soru İngilizce’ye çevrilir → Model çalışır → Yanıt Türkçe döndürülür.
+---
 
-Bu özellik yabancı dilde yazılmış soruların daha iyi anlaşılmasını sağlar,
-ancak modelin cevabı birkaç saniye gecikebilir.
-
-⚠️ Önemli Notlar
-
-İlk çalıştırmada modeller indirilir, 1 defaya mahsustur.
-
-Büyük PDF'lerde uzun süren indeksleme gözlemlenebilir.
-
-Aynı dosya ismine sahip yüklemeler otomatik olarak tekrar yazılmaz.
-
-Çok dilli mod ek işlem süresi gerektirebilir.
-
-### 🔧 Modüler Yapı
-
-Dosya	Açıklama
-app.py	Streamlit tabanlı arayüz
-rag_pipeline.py	Sorgu işleme ve model çağrısı
-ingest.py	PDF metinlerini parçalayıp ChromaDB’ye kaydeder
-assets/styles.css	UI renk, tema, ikon düzenlemeleri
-
-### 🧩 Sorun Giderme
-Hata	Çözüm
-ModuleNotFoundError	pip install -r requirements.txt çalıştırın
-API key expired / invalid	.env dosyasındaki anahtarları yenileyin
-chromadb.errors.NotFoundError	python ingest.py --input data/ çalıştırın
-Gemini model not found	.env dosyasına GEMINI_MODEL=gemini-2.5-flash ekleyin
-FileNotFoundError	data/ klasöründe PDF olduğundan emin olun
-### 🧠 Geliştirme Notları
-
- PDF yükleme & otomatik indeksleme
-
- Gemini ve GPT desteği
-
- Türkçe ve çok dilli destek
-
- Dinamik PDF listesi
-
- Responsive arayüz (mobil görünüm)
-
- Chat geçmişi kaydı
-
- SQLite tabanlı sorgu arşivi
-
-### 📝 Lisans
-
-Bu proje eğitim amaçlıdır.
-Kodlar MIT lisansı altındadır.
+## Lisans
+Kod tabanı MIT lisansı altındadır. Ayrıntılar için `LICENSE` dosyasına bakabilirsiniz.
