@@ -17,7 +17,10 @@ EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
 # -----------------------------
 # Embedding (lazy global)
 # -----------------------------
-_embedder = SentenceTransformer(EMBED_MODEL_NAME)
+@lru_cache(maxsize=1)
+def _get_embedder():
+    """Load embedding model lazily to avoid blocking app startup."""
+    return SentenceTransformer(EMBED_MODEL_NAME)
 
 # -----------------------------
 # Chroma helpers
@@ -95,7 +98,8 @@ def retrieve(query: str, top_k: int = 4) -> List[Dict]:
             d["score"] = 0.4 * (d["score_kw"] / max_kw)
         return merged[:top_k]
 
-    q_emb = _embedder.encode([query], normalize_embeddings=True).tolist()
+    embedder = _get_embedder()
+    q_emb = embedder.encode([query], normalize_embeddings=True).tolist()
     vres = col.query(
         query_embeddings=q_emb,
         n_results=max(top_k, 12),

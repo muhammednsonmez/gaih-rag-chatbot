@@ -1,7 +1,6 @@
 import os
 import uuid
 import time
-from ingest import main as ingest_main
 import streamlit as st
 from dotenv import load_dotenv
 import chromadb
@@ -27,9 +26,12 @@ def ensure_chroma_index():
     try:
         col = client.get_collection(COLLECTION_NAME)
     except Exception:
-        col = client.create_collection(name=COLLECTION_NAME)
-    if col.count() == 0:
-        ingest_main("data/")
+        return False, "Chroma koleksiyonu bulunamadı. `vectordb/` klasörünü sunucuya yükleyip yeniden deneyin."
+    try:
+        total = col.count()
+    except Exception as e:
+        return False, f"Chroma koleksiyonu okunamadı: {e}"
+    return True, total
 
 def rewrite_to_english(q: str) -> str:
     """Gemini'ye ipucu için kısa İngilizce yeniden yazım. Hata olursa orijinali döndürür."""
@@ -56,7 +58,12 @@ def rewrite_to_english(q: str) -> str:
 # --------- UI Başlangıç ---------
 st.set_page_config(page_title="Kali Linux Multilingual-Turkish RAG Chatbot", page_icon="🔎", layout="centered")
 load_css("assets/styles.css")
-ensure_chroma_index()
+index_ready, index_count = ensure_chroma_index()
+if not index_ready:
+    st.error(index_count)
+    st.stop()
+if index_count == 0:
+    st.warning("Chroma koleksiyonu boş görünüyor. Sorgular yanıt üretmeyebilir.")
 
 # Header
 st.markdown(
