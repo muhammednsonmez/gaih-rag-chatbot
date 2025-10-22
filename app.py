@@ -75,7 +75,7 @@ def ensure_chroma_index():
         )
 
     # Ingest çalıştır
-    ingest_main(str(DATA_DIR))
+    #ingest_main(str(DATA_DIR))
 
     # Persist edilen veriyi görmek için koleksiyonu tekrar al
     # (bazı ortamlarda ingest ayrı process/client ile yazmış olabilir)
