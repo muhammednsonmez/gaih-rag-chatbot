@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 # -----------------------------
 VECTOR_DIR = "vectordb"
 COLLECTION_NAME = "docs"
-EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
+EMBED_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 # -----------------------------
 # Embedding (lazy global)
