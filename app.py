@@ -89,6 +89,14 @@ with st.sidebar:
     st.subheader("Ayarlar")
     top_k = st.slider("Top K", 1, 8, 4)
 
+    st.markdown("---")
+    if st.button("İndeksi oluştur / yenile", use_container_width=True):
+        with st.spinner("İndeksleniyor… (ilk sefer uzun sürebilir)"):
+            from ingest import main as ingest_main  # 🔥 lazy import burada
+            ingest_main("data/")
+        st.success("İndeks hazır!")
+        st.rerun()
+
     if "multilingual" not in st.session_state:
         st.session_state.multilingual = False
     st.session_state.multilingual = st.toggle(
@@ -127,12 +135,6 @@ with st.sidebar:
     except Exception as e:
         st.caption(f"Chroma erişim hatası: {e}")
 
-    st.markdown("---")
-if st.button("İndeksi oluştur / yenile", use_container_width=True):
-    with st.spinner("İndeksleniyor… (ilk sefer uzun sürebilir)"):
-        ingest_main("data/")
-    st.success("İndeks hazır!")
-    st.rerun()
 
 # --------- Form ---------
 with st.form("qa_form", clear_on_submit=True):

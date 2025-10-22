@@ -9,3 +9,4 @@ python-dotenv
 google-generativeai>=0.7.0
 pypdf
 requests
+huggingface_hub<0.21
