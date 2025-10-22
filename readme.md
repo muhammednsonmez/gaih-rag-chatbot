@@ -1,16 +1,15 @@
-# TR-FAQ RAG Chatbot
+# Kali Linux RAG Chatbot
 
-Gemini destekli **Retrieval-Augmented Generation** (RAG) chatbotu. `data/` klasörüne eklediğiniz PDF dosyalarını indeksleyerek Streamlit arayüzü üzerinden kaynak gösteren yanıtlar üretir. Uygulama varsayılan olarak Türkçe konuşur ve isteğe bağlı olarak çok dilli sorguları İngilizce’ye yeniden yazarak daha isabetli sonuçlar döndürür.
+Gemini destekli **Retrieval-Augmented Generation** (RAG) chatbotu. Kali Linux dokümantasyonunu içeren PDF’leri ChromaDB üzerinde indeksleyip Streamlit arayüzüyle Türkçe yanıt ve kaynak referansı üretir. İsteğe bağlı çok dilli mod sayesinde Türkçe dışındaki sorular, daha doğru geri getirme için Gemini ile İngilizceye yeniden yazılır.
 
 ---
 
 ## Özellikler
-- **Gemini-only**: Tüm yanıtlar Google Gemini API üzerinden üretilir (OpenAI bağımlılığı yoktur).
-- **Kalıcı vektör veritabanı**: ChromaDB ile hibrit (vektör + anahtar kelime) arama.
-- **Çok dilli sorgu modu**: Türkçe dışındaki soruları otomatik çevirerek bağlam toplamayı iyileştirir.
-- **Streamlit arayüzü**: Top-K seçimi, PDF listesi, sohbet geçmişi ve kaynak gösterimi.
-- **PDF yükleme & indeksleme**: PDF’leri uygulama içinden veya komut satırından ekleyebilirsiniz.
-- **İptal & sohbet dışa aktarma**: Uzayan sorguları iptal edin, konuşmayı `.txt` olarak indirin.
+- **Gemini-only**: Yanıtlar Google Gemini API üzerinden üretilir; ek LLM entegrasyonu gerekmez.
+- **Hibrit retrieval**: ChromaDB üzerinde hem vektör benzerliği hem de anahtar kelime eşleşmesi kullanılır.
+- **Önceden hazırlanmış vektör DB**: `vectordb/` klasörüyle birlikte dağıtabilir, sunucuda ingest çalıştırmadan hazır indeksle açabilirsiniz.
+- **Streamlit arayüzü**: Top-K seçimi, çok dilli mod anahtarı, kaynak listesi, sohbet geçmişi ve iptal özelliği.
+- **Sohbet dışa aktarma**: Oturumu `.txt` olarak indirebilirsiniz.
 
 ---
 
@@ -18,10 +17,10 @@ Gemini destekli **Retrieval-Augmented Generation** (RAG) chatbotu. `data/` klas�
 ### Gereksinimler
 - Python 3.10+
 - Google Gemini API anahtarı (Google AI Studio)
-- `pip`, `virtualenv` (opsiyonel ama tavsiye edilir)
+- `pip`, `virtualenv` (opsiyonel ama önerilir)
 
-### Kurulum Adımları
-1. **Depoyu içeri alın**
+### Kurulum
+1. **Depoyu alın**
    ```bash
    git clone <repo-url>
    cd gaih-rag-chatbot
@@ -39,26 +38,32 @@ Gemini destekli **Retrieval-Augmented Generation** (RAG) chatbotu. `data/` klas�
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
-4. **.env dosyasını oluşturun**
-   `.env` dosyası örneği:
+4. **.env dosyasını ekleyin**
    ```env
    GEMINI_API_KEY=your_gemini_api_key
-   GEMINI_MODEL=gemini-2.5-flash   # opsiyonel, varsayılan bu model
+   GEMINI_MODEL=gemini-2.5-flash   # opsiyonel, varsayılan değer
    ```
 
-> ⚠️ Uygulama yalnızca Gemini ile çalışır. `GEMINI_API_KEY` olmadan başlatamazsınız.
+> ⚠️ `GEMINI_API_KEY` olmadan uygulama başlatılamaz.
 
 ---
 
-## PDF’leri İndeksleme
-Uygulama ilk açıldığında `vectordb/` içinde koleksiyon bulamazsa hata verir. PDF’leri indekslemek için:
-```bash
-python ingest.py --input data/
-```
+## Vektör Veritabanını Hazırlama
+Uygulama açılırken `vectordb/` içinde `docs` koleksiyonunu arar. İki farklı yaklaşım kullanabilirsiniz:
 
-- `data/` klasörüne koyduğunuz her PDF, metin parçalarına bölünerek ChromaDB’ye eklenir.
-- Aynı dosyayı tekrar indekslemek isterseniz, çıkarıp yeniden ekleyebilir veya komutu yeniden çalıştırabilirsiniz (koleksiyon silinip baştan oluşturulur).
-- PDF taranmış ise metin çıkarımı boş dönebilir; bu durumda OCR uygulamanız gerekir.
+1. **Önceden oluşturulmuş indeksle dağıtım (önerilen)**  
+   - Yerelde PDF’leri indeksleyip `vectordb/` klasörünü repoda tutun (SQLite dosyası artık `.gitignore` dışına alındı).  
+   - Sunucuya kodu gönderdiğinizde uygulama hazır koleksiyonu kullanır; ingest komutuna gerek kalmaz.
+
+2. **Sunucuda ingest çalıştırma**  
+   - `data/` klasörüne PDF’leri koyun.  
+   - Aşağıdaki komutu çalıştırarak yeni koleksiyon oluşturun:
+     ```bash
+     python ingest.py --input data/
+     ```
+   - Komut, mevcut koleksiyonu silip baştan oluşturur. PDF taranmış ise metin çıkarımı boş dönebilir; bu durumda önce OCR uygulayın.
+
+> Koleksiyon dosyaları büyük olabilir. Streamlit Cloud gibi ortamlarda kota sınırlarını kontrol edin.
 
 ---
 
@@ -67,54 +72,61 @@ python ingest.py --input data/
 streamlit run app.py
 ```
 
-Arayüz bileşenleri:
-- Sol menüde `Top K` (döndürülmek istenen bağlam parçası sayısı) ve çok dilli mod anahtarı.
-- PDF listesi mevcut belgeleri gösterir.
-- Form alanından soru gönderilir, iptal butonu uzun sorguları keser.
-- Yanıtlar sonunda kullanılan kaynaklar `[1]`, `[2]` şeklinde listelenir.
+Arayüzde:
+- Sol sidebar’da `Top K` (bağlam parçası sayısı) ve çok dilli mod anahtarı bulunur.
+- Chroma koleksiyonunun toplam parça sayısı ve veri kaynakları listelenir.
+- Form alanından soru gönderilir; “İptal Et” butonu uzun sorguları sonlandırır.
+- Yanıtlar kullanılan kaynakları `[1]`, `[2]` formatıyla gösterir.
+- Sohbet geçmişi sayfanın altına doğru listelenir ve `.txt` olarak indirilebilir.
 
 ---
 
-## Streamlit Cloud’a Dağıtım
-1. Depoyu GitHub’a (veya Streamlit Cloud’un erişebileceği bir kaynağa) gönderin.
-2. Streamlit Cloud’da yeni bir uygulama oluştururken `app.py` dosyasını seçin.
+## Dağıtım Notları (Streamlit Cloud Örneği)
+1. Depoyu `vectordb/` klasörüyle birlikte GitHub’a gönderin.
+2. Streamlit Cloud’da uygulamayı oluşturun ve `app.py` dosyasını seçin.
 3. **Secrets** bölümüne Gemini anahtarınızı ekleyin:
    ```toml
    GEMINI_API_KEY = "xxxxx"
    GEMINI_MODEL = "gemini-2.5-flash"
    ```
-4. Uygulama açıldıktan sonra Cloud’ın Terminal sekmesinden bir defaya mahsus:
+4. Uygulama açıldığında hazır koleksiyon yüklenir. Koleksiyon göndermediyseniz terminalden
    ```bash
    python ingest.py --input data/
    ```
-   komutunu çalıştırın. (Cloud ortamı kapatılıp yeniden açılırsa komutu tekrar çalıştırmanız gerekebilir.)
-5. Veri gizliliği gerektiren PDF’ler için Streamlit Cloud’da `Secrets` veya `st.file_uploader` ile yükleme akışını tercih edin; bu repository’ye dosya koymaktan daha güvenlidir.
+   komutunu çalıştırın.
+5. Ortam yeniden başlatıldığında `vectordb/` klasörü korunmuyorsa (ör. ephemeral disk), ingest komutunu otomatik başlatmak için `startup.sh` benzeri bir betik kullanın veya koleksiyonu her dağıtımda yeniden yükleyin.
 
 ---
 
 ## Klasör Yapısı
 ```text
 gaih-rag-chatbot/
-├─ app.py              # Streamlit arayüzü ve entegrasyonlar
-├─ rag_pipeline.py     # Hibrit retrieval + Gemini yanıt üretimi
-├─ ingest.py           # PDF parçalama ve ChromaDB’ye ekleme
+├─ app.py              # Streamlit arayüzü
+├─ rag_pipeline.py     # Hibrit retrieval + Gemini çağrısı
+├─ ingest.py           # PDF parçalama ve Chroma ingest
 ├─ assets/styles.css   # Streamlit teması
-├─ data/               # PDF kaynakları (örnek dosyalarınızı buraya koyun)
-├─ vectordb/           # Kalıcı Chroma koleksiyonu (ilk ingest sonrası oluşur)
+├─ data/               # Kaynak PDF’ler
+├─ vectordb/           # Kalıcı Chroma koleksiyonu
 ├─ requirements.txt
 └─ README.md
 ```
 
 ---
 
-## Sık Karşılaşılan Sorunlar
-- **`GEMINI_API_KEY` bulunamadı**: `.env` dosyasını oluşturup `streamlit run app.py` komutundan önce sanal ortamı aktifleştirdiğinizden emin olun.
-- **`chromadb.errors.NotFoundError`**: Henüz indeks yok; `python ingest.py --input data/` komutunu çalıştırın.
-- **Yanıtlar İngilizce geliyor**: Çok dilli modu kapatmayı deneyin. Sistem komutları Türkçe olsa da Gemini modelinin varsayılan davranışı modele göre değişebilir.
-- **PDF metni boş görünüyor**: Dosya taranmış olabilir. OCR’den geçirdikten sonra tekrar ekleyin.
-- **Streamlit Cloud’da dosyalar kayboluyor**: Her yeniden başlatmada `vectordb/` sıfırlanır; terminalden ingest komutunu tekrar çalıştırın veya başlatma betiğine ekleyin.
+## Sık Sorulanlar
+- **“Chroma koleksiyonu bulunamadı” uyarısı alıyorum.**  
+  `vectordb/` klasörünü dağıtıma dahil ettiğinizden emin olun veya `python ingest.py --input data/` ile koleksiyon oluşturun.
+- **Yanıtlar İngilizce geliyor.**  
+  Sidebar’daki çok dilli modu kapatın. Gemini modeli bazen bağlamı İngilizce yanıtlayabilir.
+- **PDF metni boş geliyor.**  
+  Dosya taranmış olabilir; OCR uygulayıp tekrar ingest edin.
+- **İlk sorgu yavaş.**  
+  SentenceTransformer modeli ilk kullanımda indiriliyor. Dağıtımdan sonra kısa bir “ısınma” sorgusu çalıştırmak açılış süresini iyileştirir.
 
 ---
 
 ## Lisans
-Kod tabanı MIT lisansı altındadır. Ayrıntılar için `LICENSE` dosyasına bakabilirsiniz.
+Bu proje MIT lisansı ile dağıtılır. Ayrıntılar için `LICENSE` dosyasına bakabilirsiniz.
+
+## Deploy Link
+https://kaliragchat.streamlit.app/
