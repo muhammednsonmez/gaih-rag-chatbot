@@ -22,29 +22,14 @@ def load_css(path: str):
         pass
 
 def ensure_chroma_index():
-    """Koleksiyon yoksa oluşturur; boşsa data/ içinden ingest eder."""
     import chromadb
-    from pathlib import Path
-
     client = chromadb.PersistentClient(path=VECTOR_DIR)
     try:
         col = client.get_collection(COLLECTION_NAME)
     except Exception:
         col = client.create_collection(name=COLLECTION_NAME)
-
-    # Koleksiyon boşsa ingest çalıştır
     if col.count() == 0:
-        data_dir = Path("data")
-        pdfs = list(data_dir.glob("*.pdf"))
-        if not pdfs:
-            raise RuntimeError(
-                "data/ klasöründe PDF bulunamadı. PDF'leri repoya ekleyin veya data/ içine kopyalayın."
-            )
         ingest_main("data/")
-        # ingest sonrası tekrar say: gerçekten doldu mu?
-        if col.count() == 0:
-            raise RuntimeError("Ingest tamamlandı ama koleksiyon hâlâ boş görünüyor.")
-
 
 def rewrite_to_english(q: str) -> str:
     """Gemini'ye ipucu için kısa İngilizce yeniden yazım. Hata olursa orijinali döndürür."""
@@ -71,6 +56,7 @@ def rewrite_to_english(q: str) -> str:
 # --------- UI Başlangıç ---------
 st.set_page_config(page_title="Kali Linux Multilingual-Turkish RAG Chatbot", page_icon="🔎", layout="centered")
 load_css("assets/styles.css")
+ensure_chroma_index()
 
 # Header
 st.markdown(
@@ -98,19 +84,6 @@ if "run_token" not in st.session_state:
     st.session_state.run_token = None
 if "cancel_requested" not in st.session_state:
     st.session_state.cancel_requested = False
-
-# --- indeksi hazırla (ilk açılışta ingest eder) ---
-try:
-    with st.spinner("İndeks yükleniyor…"):
-        client = chromadb.PersistentClient(path=VECTOR_DIR)
-        col = client.get_collection(COLLECTION_NAME)
-        if col.count() == 0:
-            st.error("Koleksiyon boş. Ingest işlemini lokal ortamda çalıştır.")
-            st.stop()
-except Exception as e:
-    st.error(f"Chroma erişim hatası: {e}")
-    st.stop()
-
 
 # --------- Sidebar ---------
 with st.sidebar:
@@ -154,7 +127,6 @@ with st.sidebar:
             st.caption("İndekste kaynak meta bulunamadı.")
     except Exception as e:
         st.caption(f"Chroma erişim hatası: {e}")
-
 
 # --------- Form ---------
 with st.form("qa_form", clear_on_submit=True):

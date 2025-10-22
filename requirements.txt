@@ -1,10 +1,11 @@
 streamlit
-chromadb
+langchain
+langchain-community
+langchain-text-splitters
 sentence-transformers
-pypdf
+chromadb
+pydantic>=2.0
 python-dotenv
 google-generativeai
+pypdf
 requests
-PyMuPDF
-huggingface_hub
-torch
