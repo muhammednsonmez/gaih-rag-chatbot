@@ -34,7 +34,7 @@ def ensure_chroma_index():
 
     # Koleksiyon boşsa ingest çalıştır
     if col.count() == 0:
-        data_dir = Path("data")
+        data_dir = Path("./data")
         pdfs = list(data_dir.glob("*.pdf"))
         if not pdfs:
             raise RuntimeError(
