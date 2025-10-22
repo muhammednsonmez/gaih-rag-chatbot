@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 *.db
 *.sqlite3
+!vectordb/chroma.sqlite3
 .vscode/
 .venv/
 .streamlit/config.toml
