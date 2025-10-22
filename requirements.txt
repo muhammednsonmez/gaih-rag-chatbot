@@ -1,8 +1,8 @@
 streamlit
 sentence-transformers==2.2.2
-transformers==4.41.2
-tokenizers==0.19.1
-huggingface_hub<0.21
+transformers==4.39.3
+tokenizers==0.15.2
+huggingface_hub==0.20.3
 chromadb>=0.5.4,<0.6
 pydantic>=2.6,<3
 python-dotenv
