@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import chromadb
 
 # Proje içi
-from ingest import main as ingest_main   # ingest_main("data/") bekleniyor
+#from ingest import main as ingest_main   # ingest_main("data/") bekleniyor
 from rag_pipeline import answer          # answer(q, top_k) -> {"answer": str, "sources": [...]}
 
 load_dotenv()
@@ -55,35 +55,6 @@ def collection_count(col) -> int:
     except Exception:
         return 0
 
-def ensure_chroma_index():
-    """
-    1) Koleksiyon var mı? Yoksa oluştur.
-    2) Boş mu? Boşsa ingest dene (yalnızca DATA_DIR içinde PDF varsa).
-       -> Bu akış "lokalde indexle sonra sunucuya at" stratejini destekler:
-          Sunucuda koleksiyon zaten doluysa ingest'e girmez.
-    """
-    col = get_or_create_collection()
-    if collection_count(col) > 0:
-        return  # indeks hazır
-
-    # Koleksiyon boş → ingest gerekebilir
-    pdfs = list(DATA_DIR.glob("*.pdf"))
-    if not pdfs:
-        raise RuntimeError(
-            f"İndeks boş görünüyor ve {DATA_DIR} içinde PDF bulunamadı. "
-            f"Önce lokalde ingest edip sonra sunucuya yükle, ya da PDF'leri {DATA_DIR}/ altına koy."
-        )
-
-    # Ingest çalıştır
-    #ingest_main(str(DATA_DIR))
-
-    # Persist edilen veriyi görmek için koleksiyonu tekrar al
-    # (bazı ortamlarda ingest ayrı process/client ile yazmış olabilir)
-    time.sleep(0.2)
-    col = get_or_create_collection()
-
-    if collection_count(col) == 0:
-        raise RuntimeError("Ingest bitti ama koleksiyon hâlâ boş görünüyor. Ingest tarafındaki ayarları (persist path/collection) kontrol et.")
 
 # ----------------- Dil Yardımcısı (opsiyonel) -----------------
 def rewrite_to_english(q: str) -> str:
@@ -145,12 +116,12 @@ ss.setdefault("cancel_requested", False)
 ss.setdefault("multilingual", False)
 
 # ----------------- İndeks Hazırlığı -----------------
-try:
-    with st.spinner("İndeks kontrol ediliyor…"):
-        ensure_chroma_index()
-except Exception as e:
-    st.error(f"Vektör indeksi bulunamadı/hazırlanamadı. Detay: {e}")
-    st.stop()
+#try:
+#    with st.spinner("İndeks kontrol ediliyor…"):
+#        ensure_chroma_index()
+#except Exception as e:
+#    st.error(f"Vektör indeksi bulunamadı/hazırlanamadı. Detay: {e}")
+#    st.stop()s
 
 # ----------------- Sidebar -----------------
 with st.sidebar:
