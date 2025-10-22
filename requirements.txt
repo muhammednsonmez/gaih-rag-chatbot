@@ -1,7 +1,10 @@
-streamlit==1.36.0
-chromadb==0.5.4
-sentence-transformers==2.2.2
-pypdf==3.17.4
-python-dotenv==1.0.1
-google-generativeai>=0.7.0
-requests==2.32.3
+streamlit
+chromadb
+sentence-transformers
+pypdf
+python-dotenv
+google-generativeai
+requests
+PyMuPDF
+huggingface_hub
+torch

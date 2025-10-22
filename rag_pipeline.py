@@ -5,6 +5,7 @@ from typing import List, Dict
 from functools import lru_cache
 import chromadb
 import requests
+import torch
 from sentence_transformers import SentenceTransformer
 
 # -----------------------------
@@ -12,7 +13,9 @@ from sentence_transformers import SentenceTransformer
 # -----------------------------
 VECTOR_DIR = "vectordb"
 COLLECTION_NAME = "docs"
-EMBED_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
+QUERY_PREFIX = "query: "
+PASSAGE_PREFIX = "passage: "
 
 # -----------------------------
 # Embedding (lazy global)
@@ -21,7 +24,8 @@ _embedder = None
 def _get_embedder():
     global _embedder
     if _embedder is None:
-        _embedder = SentenceTransformer(EMBED_MODEL_NAME)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _embedder = SentenceTransformer(EMBED_MODEL_NAME, device=device)
     return _embedder
 
 # -----------------------------
@@ -101,16 +105,20 @@ def retrieve(query: str, top_k: int = 4) -> List[Dict]:
         return merged[:top_k]
 
     emb = _get_embedder()
-    q_emb = emb.encode([query], normalize_embeddings=True).tolist()
+    q_emb = emb.encode([QUERY_PREFIX + query], normalize_embeddings=True).tolist()
     vres = col.query(
         query_embeddings=q_emb,
         n_results=max(top_k, 12),
         include=["documents", "metadatas", "distances"]
     )
     vector_docs = []
-    for doc, meta, dist in zip(vres["documents"][0], vres["metadatas"][0], vres["distances"][0]):
-        sim = 1.0 / (1.0 + float(dist))
-        vector_docs.append({"text": doc, "meta": meta, "score_vec": sim})
+    docs = vres.get("documents") or []
+    metas = vres.get("metadatas") or []
+    dists = vres.get("distances") or []
+    if docs and metas and dists and docs[0]:
+        for doc, meta, dist in zip(docs[0], metas[0], dists[0]):
+            sim = max(0.0, 1.0 - float(dist))
+            vector_docs.append({"text": doc, "meta": meta, "score_vec": sim})
 
     bag = {}
     for d in vector_docs:
