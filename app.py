@@ -101,10 +101,14 @@ if "cancel_requested" not in st.session_state:
 
 # --- indeksi hazırla (ilk açılışta ingest eder) ---
 try:
-    with st.spinner("İndeks kontrol ediliyor…"):
-        ensure_chroma_index()
+    with st.spinner("İndeks yükleniyor…"):
+        client = chromadb.PersistentClient(path=VECTOR_DIR)
+        col = client.get_collection(COLLECTION_NAME)
+        if col.count() == 0:
+            st.error("Koleksiyon boş. Ingest işlemini lokal ortamda çalıştır.")
+            st.stop()
 except Exception as e:
-    st.error(f"Vektör indeksi bulunamadı. Lütfen data/ klasörünü ve PDF'leri kontrol edin. Detay: {e}")
+    st.error(f"Chroma erişim hatası: {e}")
     st.stop()
 
 
