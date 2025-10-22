@@ -56,7 +56,6 @@ def rewrite_to_english(q: str) -> str:
 # --------- UI Başlangıç ---------
 st.set_page_config(page_title="Kali Linux Multilingual-Turkish RAG Chatbot", page_icon="🔎", layout="centered")
 load_css("assets/styles.css")
-ensure_chroma_index()
 
 # Header
 st.markdown(
@@ -127,6 +126,13 @@ with st.sidebar:
             st.caption("İndekste kaynak meta bulunamadı.")
     except Exception as e:
         st.caption(f"Chroma erişim hatası: {e}")
+
+    st.markdown("---")
+if st.button("İndeksi oluştur / yenile", use_container_width=True):
+    with st.spinner("İndeksleniyor… (ilk sefer uzun sürebilir)"):
+        ingest_main("data/")
+    st.success("İndeks hazır!")
+    st.rerun()
 
 # --------- Form ---------
 with st.form("qa_form", clear_on_submit=True):
