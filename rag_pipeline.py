@@ -5,7 +5,7 @@ from typing import List, Dict
 from functools import lru_cache
 import chromadb
 import requests
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 # -----------------------------
 # Config
@@ -13,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 VECTOR_DIR = "vectordb"
 COLLECTION_NAME = "docs"
 EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
+RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # -----------------------------
 # Embedding (lazy global)
@@ -21,7 +22,12 @@ EMBED_MODEL_NAME = "intfloat/multilingual-e5-small"
 def _get_embedder():
     """Load embedding model lazily to avoid blocking app startup."""
     return SentenceTransformer(EMBED_MODEL_NAME)
-
+# -----------------------------
+# Reranker (lazy global)
+@lru_cache(maxsize=1)
+def _get_reranker():
+    """Load reranker model lazily."""
+    return CrossEncoder(RERANK_MODEL_NAME)
 # -----------------------------
 # Chroma helpers
 # -----------------------------
@@ -88,9 +94,14 @@ def _keyword_hits(col, query: str, max_hits: int = 200):
 def retrieve(query: str, top_k: int = 4) -> List[Dict]:
     col = _client_collection()
 
+    # 1. AŞAMA: Aday Havuzu Oluşturma (Candidate Generation)
+    # Reranking yapacağımız için normalden daha fazla (örn: 25) sonuç çağırıyoruz.
+    initial_k = 25 
+    
     only_numbers = re.fullmatch(r"\D*\d{3,}\D*", query.strip()) is not None
-    kw_docs = _keyword_hits(col, query, max_hits=200)
+    kw_docs = _keyword_hits(col, query, max_hits=initial_k)
 
+    # Sadece sayı varsa reranking ile vakit kaybetme, direkt dön
     if only_numbers and kw_docs:
         merged = kw_docs[:max(top_k, 6)]
         max_kw = max(d["score_kw"] for d in merged) or 1.0
@@ -100,33 +111,53 @@ def retrieve(query: str, top_k: int = 4) -> List[Dict]:
 
     embedder = _get_embedder()
     q_emb = embedder.encode([query], normalize_embeddings=True).tolist()
+    
+    # Vektörden de bolca aday alalım
     vres = col.query(
         query_embeddings=q_emb,
-        n_results=max(top_k, 12),
+        n_results=max(initial_k, 20),
         include=["documents", "metadatas", "distances"]
     )
+    
     vector_docs = []
-    for doc, meta, dist in zip(vres["documents"][0], vres["metadatas"][0], vres["distances"][0]):
-        sim = 1.0 / (1.0 + float(dist))
-        vector_docs.append({"text": doc, "meta": meta, "score_vec": sim})
+    if vres["documents"]:
+        for doc, meta, dist in zip(vres["documents"][0], vres["metadatas"][0], vres["distances"][0]):
+            sim = 1.0 / (1.0 + float(dist))
+            vector_docs.append({"text": doc, "meta": meta, "score_vec": sim})
 
+    # Hybrid Birleştirme (Dedup)
     bag = {}
     for d in vector_docs:
         h = hashlib.md5(d["text"].encode("utf-8")).hexdigest()
-        bag[h] = {"text": d["text"], "meta": d["meta"], "score_vec": d["score_vec"], "score_kw": 0.0}
+        bag[h] = d
     for d in kw_docs:
         h = hashlib.md5(d["text"].encode("utf-8")).hexdigest()
-        if h in bag:
-            bag[h]["score_kw"] = max(bag[h]["score_kw"], d.get("score_kw", 0.0))
-        else:
-            bag[h] = {"text": d["text"], "meta": d["meta"], "score_vec": 0.0, "score_kw": d.get("score_kw", 0.0)}
+        if h not in bag:
+            bag[h] = d
+            bag[h]["score_vec"] = 0.0 # Vektörden gelmediyse
+    
+    candidates = list(bag.values())
 
-    merged = list(bag.values())
-    for d in merged:
-        d["score"] = 0.6 * d["score_vec"] + 0.4 * (d["score_kw"] / 10.0)
+    if not candidates:
+        return []
 
-    merged.sort(key=lambda x: x["score"], reverse=True)
-    return merged[:top_k]
+    # 2. AŞAMA: Reranking (Yeniden Sıralama)
+    # Cross-Encoder kullanarak "bu metin bu soruya gerçekten cevap veriyor mu?" diye soruyoruz.
+    reranker = _get_reranker()
+    pairs = [[query, c["text"]] for c in candidates]
+    
+    # Puanla
+    scores = reranker.predict(pairs)
+    
+    # Puanları işle
+    for i, c in enumerate(candidates):
+        c["score"] = float(scores[i])
+        
+    # En yüksek puana göre sırala
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    
+    # En iyi top_k sonucu döndür
+    return candidates[:top_k]
 
 # -----------------------------
 # Gemini caller (REST)
